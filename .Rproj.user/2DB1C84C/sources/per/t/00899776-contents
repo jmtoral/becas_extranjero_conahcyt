@@ -1,0 +1,170 @@
+
+### Sept - 8, 2023
+
+# set options
+options(stringsAsFactors = F)         # no automatic data transformation
+options("scipen" = 100, "digits" = 4) # suppress math annotation
+
+# load packages
+library(knitr) 
+library(tm)
+library(topicmodels)
+library(tidyverse)
+library(wordcloud)
+library(SnowballC)
+library(lda)
+library(ldatuning)
+library(tidytext)
+library(showtext)
+
+
+# load data
+
+acled <- read_csv("data/AllCountries2023.csv") |> 
+  filter(
+    country %in% c("Mexico"),
+    year(event_date) == 2023,
+    month(event_date) >= 1,
+    month(event_date) <= 7
+  ) %>% 
+  rename(text = notes) %>% 
+  rowid_to_column("doc_id") %>% 
+  select(doc_id, country, admin1, admin2, event_date, assoc_actor_1, text) %>% 
+  as.data.frame()
+
+
+
+# Setup -------------------------------------------------------------------
+
+
+showtext_auto()
+font_add_google("Anton", family = "Anton")
+font_add_google("Mulish", family = "Mulish")
+
+
+tema <- theme(
+  plot.title = element_text(size = 24, face = "bold", family = "Anton", color = "grey15"),
+  plot.subtitle = element_text(size = 20, colour = "grey30", family = "Mulish"),
+  text = element_text(family = "Mulish", color = "grey50"),
+  plot.title.position = 'plot',
+  panel.grid.minor = element_blank(),
+  panel.grid.major = element_line(size = 0.1),
+  axis.title.y = element_text(angle = 0, vjust = 0.5),
+  axis.title = element_text(family = "Mulish", color = "grey50", size = 18),
+  axis.text = element_text(family = "Mulish", size = 14),
+  legend.text = element_text(family = "Mulish", size = 14),
+  legend.title = element_text(family = "Mulish", size = 16),
+  legend.position="bottom"
+)
+
+
+# load stopwords
+english_stopwords <- readLines("https://slcladal.github.io/resources/stopwords_en.txt", encoding = "UTF-8")
+# tm::stopwords("en")
+# tm::stopwords("es")
+
+# create corpus object
+corpus <- Corpus(DataframeSource(acled))
+extras <- c("protest", "march", "block", "demand", "demonstration", "protested",
+            "demanded", "marched", "blocked", "demonstrations")
+
+# Preprocessing chain
+processedCorpus <- tm_map(corpus, content_transformer(tolower))
+processedCorpus <- tm_map(processedCorpus, removeWords, c(tm::stopwords("en"), extras))
+processedCorpus <- tm_map(processedCorpus, removePunctuation, preserve_intra_word_dashes = TRUE)
+processedCorpus <- tm_map(processedCorpus, removeNumbers)
+#processedCorpus <- tm_map(processedCorpus, stemDocument, language = "en")
+processedCorpus <- tm_map(processedCorpus, removeWords, c(tm::stopwords("en"), extras))
+processedCorpus <- tm_map(processedCorpus, stripWhitespace)
+
+
+
+
+
+
+
+
+# compute document term matrix with terms >= minimumFrequency
+minimumFrequency <- 5
+DTM <- DocumentTermMatrix(processedCorpus, control = list(bounds = list(global = c(minimumFrequency, Inf))))
+# have a look at the number of documents and terms in the matrix
+dim(DTM)
+
+
+
+
+
+
+# # due to vocabulary pruning, we have empty rows in our DTM
+# # LDA does not like this. So we remove those docs from the
+# # DTM and the metadata
+# sel_idx <- slam::row_sums(DTM) > 0
+# DTM <- DTM[sel_idx, ]
+# textdata <- textdata[sel_idx, ]
+
+# create models with different number of topics
+result <- ldatuning::FindTopicsNumber(
+  DTM,
+  topics = seq(from = 2, to = 20, by = 1),
+  metrics = c("CaoJuan2009",  "Deveaud2014"),
+  method = "Gibbs",
+  control = list(seed = 77),
+  verbose = TRUE
+)
+
+
+FindTopicsNumber_plot(result)
+
+
+# number of topics
+K <- 8
+# set random number generator seed
+set.seed(9161)
+# compute the LDA model, inference via 1000 iterations of Gibbs sampling
+topicModel <- LDA(DTM, K, method="Gibbs", control=list(iter = 500, verbose = 25))
+
+terms(topicModel, 20)
+
+
+top10termsPerTopic <- terms(topicModel, 20)
+topicNames <- apply(top10termsPerTopic, 2, paste, collapse=" ")
+
+
+ldda_beta <- tidy(topicModel, matrix = "beta")
+
+lda_gamma <- tidy(topicModel, matrix = "gamma")
+
+x <- acled |> 
+  mutate(doc_id = as.character(doc_id)) |> 
+  left_join(
+    lda_gamma |> 
+      group_by(doc_id=document) |> 
+      arrange(gamma) |> 
+      slice_head()
+  )
+
+
+x |> 
+  ungroup() |> 
+  mutate(event_date = floor_date(event_date, "month")) |> 
+  group_by(event_date, topic) |> 
+  summarise(n = n()) |>
+  ungroup() |> 
+  group_by(event_date) |> 
+  mutate(prop = n/sum(n)) |> 
+  ungroup() |> 
+  mutate(topic = as.factor(topic)) |> 
+  #mutate(topic = fct_relevel(topic, as.character(seq(1,10,1)))) |> 
+  ggplot(aes(event_date, prop, fill = topic)) +
+  geom_col() +
+  theme_minimal()+
+  tema+
+  theme(panel.grid.major = element_blank()) +
+  labs(x = "fecha", y = "%",
+       title = "Distribución temas") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b")
+
+
+ggsave("graficas/grafica7_mx.png", width = 5, height = 4, dpi = 180)  
+

@@ -1,0 +1,12 @@
+library(tidyverse)
+
+files <- list.files("data/", full.names = TRUE)
+
+files.list <- lapply(seq_along(files), function(i) {
+  df <- readxl::read_excel(files[i], skip = 2)
+  file_name <- basename(files[i]) %>% str_remove("\\.xlsx")
+  df <- df %>% mutate(FileName = file_name)
+  return(df)
+})
+
+x <- files.list[[1]]

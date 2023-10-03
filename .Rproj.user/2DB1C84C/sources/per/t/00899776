@@ -1,0 +1,26 @@
+{
+    "id": "00899776",
+    "path": "~/GFW/scripts/tmMX.R",
+    "project_path": null,
+    "type": "r_source",
+    "hash": "1458310638",
+    "contents": "",
+    "dirty": false,
+    "created": 1696336540504.0,
+    "source_on_save": false,
+    "relative_order": 6,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "39,0",
+        "scrollLine": "38"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1695917576,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1695917576,
+    "read_only": false,
+    "read_only_alternatives": []
+}
